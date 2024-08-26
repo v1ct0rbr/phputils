@@ -16,7 +16,6 @@
 
 <?php
 
-
 // Verifica se o formulário foi enviado
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     // Obtém o valor do campo de senha do formulário
