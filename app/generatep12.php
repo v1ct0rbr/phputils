@@ -6,7 +6,7 @@
     <title>Gerar Chave Privada e Certificado</title>
 </head>
 <body>
-    <form id="certForm">
+    <form method="post">
         <label for="commonName">Common Name (CN):</label><br>
         <input type="text" id="commonName" name="commonName" required><br><br>
 
@@ -28,91 +28,55 @@
         <label for="p12Password">Password for P12:</label><br>
         <input type="password" id="p12Password" name="p12Password" required><br><br>
 
-        <button type="button" id="generateBtn">Gerar Chave Privada e Certificado</button>
-        <button type="button" id="exportP12Btn">Exportar para P12</button>
+        <button type="submit" name="generate">Gerar e Exportar P12</button>
     </form>
 
-    <h3>Chave Privada:</h3>
-    <textarea id="privateKey" rows="10" cols="60" readonly></textarea>
+    <?php
+    if (isset($_POST['generate'])) {
+        $dn = array(
+            "countryName" => $_POST['countryName'],
+            "stateOrProvinceName" => $_POST['state'],
+            "localityName" => $_POST['locality'],
+            "organizationName" => $_POST['organization'],
+            "organizationalUnitName" => $_POST['organizationalUnit'],
+            "commonName" => $_POST['commonName']
+        );
 
-    <h3>Certificado:</h3>
-    <textarea id="certificate" rows="10" cols="60" readonly></textarea>
+        // Gera uma nova chave privada de 2048 bits
+        $privateKey = openssl_pkey_new(array(
+            "private_key_bits" => 2048,
+            "private_key_type" => OPENSSL_KEYTYPE_RSA,
+        ));
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js"></script>
-    <script>
-        let keypair;
-        let cert;
+        // Gera um pedido de assinatura de certificado (CSR)
+        $csr = openssl_csr_new($dn, $privateKey, array('digest_alg' => 'sha256'));
 
-        document.getElementById('generateBtn').addEventListener('click', function() {
-            // Obtém os valores do formulário
-            const commonName = document.getElementById('commonName').value;
-            const countryName = document.getElementById('countryName').value;
-            const state = document.getElementById('state').value;
-            const locality = document.getElementById('locality').value;
-            const organization = document.getElementById('organization').value;
-            const organizationalUnit = document.getElementById('organizationalUnit').value;
+        // Auto-assina o CSR para gerar um certificado X.509
+        $cert = openssl_csr_sign($csr, null, $privateKey, 365, array('digest_alg' => 'sha256'));
 
-            // Gera a chave privada
-            keypair = forge.pki.rsa.generateKeyPair(2048);
-            const privateKeyPem = forge.pki.privateKeyToPem(keypair.privateKey);
+        // Defina a senha do P12
+        $p12Password = $_POST['p12Password'];
 
-            // Define os dados do certificado
-            cert = forge.pki.createCertificate();
-            cert.publicKey = keypair.publicKey;
-            cert.serialNumber = '01';
-            cert.validity.notBefore = new Date();
-            cert.validity.notAfter = new Date();
-            cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
+        // Exporta a chave privada e o certificado para um arquivo P12
+        $p12 = null;
+        openssl_pkcs12_export($cert, $p12, $privateKey, $p12Password);
 
-            const attrs = [{
-                name: 'commonName',
-                value: commonName
-            }, {
-                name: 'countryName',
-                value: countryName
-            }, {
-                shortName: 'ST',
-                value: state
-            }, {
-                name: 'localityName',
-                value: locality
-            }, {
-                name: 'organizationName',
-                value: organization
-            }, {
-                shortName: 'OU',
-                value: organizationalUnit
-            }];
-            cert.setSubject(attrs);
-            cert.setIssuer(attrs);
+        // Salva o arquivo P12
 
-            // Assina o certificado
-            cert.sign(keypair.privateKey);
+        $outputDir = 'output/';
 
-            const certPem = forge.pki.certificateToPem(cert);
+        if (!file_exists($outputDir)) {
+            mkdir($outputDir, 0777, true);
+        }
+        $p12File = $outputDir . 'certificado.p12';
+        file_put_contents($p12File, $p12);
 
-            // Exibe a chave privada e o certificado nos campos de texto
-            document.getElementById('privateKey').value = privateKeyPem;
-            document.getElementById('certificate').value = certPem;
-        });
+        echo "<p>O arquivo P12 foi gerado com sucesso. <a href='$p12File'>Clique aqui para baixar</a></p>";
 
-        document.getElementById('exportP12Btn').addEventListener('click', function() {
-            const password = document.getElementById('p12Password').value;
-
-            if (!keypair || !cert) {
-                alert('Por favor, gere a chave privada e o certificado primeiro.');
-                return;
-            }
-
-            const p12Asn1 = forge.pkcs12.toPkcs12Asn1(keypair.privateKey, cert, password);
-            const p12Der = forge.asn1.toDer(p12Asn1).getBytes();
-            const p12Blob = new Blob([forge.util.binary.raw.decode(p12Der)], { type: 'application/x-pkcs12' });
-
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(p12Blob);
-            link.download = 'certificate.p12';
-            link.click();
-        });
-    </script>
+        // Não é mais necessário liberar recursos explicitamente em PHP 8.0+
+        // openssl_x509_free($cert);
+        // openssl_pkey_free($privateKey);
+    }
+    ?>
 </body>
 </html>
